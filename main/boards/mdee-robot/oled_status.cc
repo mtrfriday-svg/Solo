@@ -99,7 +99,7 @@ void OledStatus::Render() {
     if (!ready_) return;
     auto& robot = MdeeRobot::GetInstance();
     auto& lb = LogicBattery::GetInstance();
-    char line[40];
+    char line[64];
 
     // Wi-Fi
     wifi_ap_record_t ap;
@@ -118,7 +118,7 @@ void OledStatus::Render() {
     Text(0, 0, line);
 
     // row 1: motor pack (M) and logic pack (L)
-    char m[16], l[16];
+    char m[24], l[24];
     float v = robot.BatteryVolts();
     if (robot.LinkUp() && v > 4.0f) snprintf(m, sizeof(m), "M%3.1fV%3d%%", v, robot.BatteryPercent());
     else snprintf(m, sizeof(m), "M --.-V   ");
@@ -137,7 +137,7 @@ void OledStatus::Render() {
         if (blink) Text(0, 2, "!! LOGIC BATT LOW !!");
     } else {
         int f = robot.FrontCm(), r = robot.RearCm();
-        char fs[8], rs[8];
+        char fs[16], rs[16];
         if (f >= 400) snprintf(fs, sizeof(fs), "--"); else snprintf(fs, sizeof(fs), "%d", f);
         if (r >= 400) snprintf(rs, sizeof(rs), "--"); else snprintf(rs, sizeof(rs), "%d", r);
         snprintf(line, sizeof(line), "F%s R%s %s", fs, rs, MdeeRobot::ModeName(robot.GetMode()));
