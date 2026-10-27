@@ -1,0 +1,125 @@
+name: Build M'DEE robot
+
+# What gets built:
+#   solo  = ONE ESP32-S3 N16R8 does everything (test build)      <- the default on every push
+#   brain = ESP32-S3 N16R8 of the two-board robot (needs the body board)
+#   body  = second board of the two-board robot (mdee_body folder)
+# On every push only "solo" is built, so you get your artifact fast.
+# For the others: GitHub app -> Actions -> "Build M'DEE robot" -> Run workflow -> choose brain / body / all.
+# Download from the finished run -> "Artifacts" (works in the phone browser).
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to build"
+        type: choice
+        options: [solo, brain, body, all]
+        default: solo
+
+permissions:
+  contents: read
+
+# a newer push cancels an older unfinished build, so you never wait for outdated builds
+concurrency:
+  group: mdee-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  solo:
+    name: Solo test build (one ESP32-S3 N16R8)
+    if: ${{ github.event_name == 'push' || inputs.target == 'solo' || inputs.target == 'all' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache downloaded ESP components
+        uses: actions/cache@v4
+        with:
+          path: |
+            /root/.cache/Espressif/ComponentManager
+            managed_components
+          key: brain-components-${{ hashFiles('main/idf_component.yml') }}
+          restore-keys: brain-components-
+      - name: Build mdee-solo
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          python scripts/build.py mdee-robot --name mdee-solo --language en-US --wake-word wn9_hijason_tts2
+      - name: Upload solo firmware (flash at address 0x0)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdee_solo_n16r8_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error
+          retention-days: 30
+
+  brain:
+    name: Brain (ESP32-S3 N16R8)
+    if: ${{ inputs.target == 'brain' || inputs.target == 'all' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache downloaded ESP components
+        uses: actions/cache@v4
+        with:
+          path: |
+            /root/.cache/Espressif/ComponentManager
+            managed_components
+          key: brain-components-${{ hashFiles('main/idf_component.yml') }}
+          restore-keys: brain-components-
+      - name: Build mdee-robot
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          python scripts/build.py mdee-robot --name mdee-robot --language en-US --wake-word wn9_hijason_tts2
+      - name: Upload brain firmware (flash at address 0x0)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdee_brain_n16r8_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error
+          retention-days: 30
+
+  body:
+    name: Body (second board)
+    if: ${{ inputs.target == 'body' || inputs.target == 'all' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache downloaded ESP components
+        uses: actions/cache@v4
+        with:
+          path: |
+            /root/.cache/Espressif/ComponentManager
+            mdee_body/managed_components
+          key: body-components-${{ hashFiles('mdee_body/main/idf_component.yml') }}
+          restore-keys: body-components-
+      - name: Build mdee_body
+        shell: bash
+        working-directory: mdee_body
+        run: |
+          source $IDF_PATH/export.sh
+          idf.py set-target esp32s3
+          idf.py build
+          # one complete image (bootloader + partition table + app) to flash at 0x0.
+          # Done by hand because "idf.py merge-bin -o build/..." looked for build/build/ and failed.
+          cd build
+          python -m esptool --chip esp32s3 merge-bin -o merged-binary.bin @flash_args
+          ls -la merged-binary.bin
+      - name: Upload body firmware (flash at address 0x0)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdee_body_supermini_${{ github.sha }}
+          path: mdee_body/build/merged-binary.bin
+          if-no-files-found: error
+          retention-days: 30
